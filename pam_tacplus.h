@@ -46,5 +46,7 @@
   #define PAM_EXTERN extern
 #endif
 
+#define PAM_TACACS_CONF_FILE "/etc/tacacs.conf"
+
 #endif  /* PAM_TACPLUS_H */
 

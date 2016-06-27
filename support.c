@@ -33,6 +33,7 @@
 tacplus_server_t tac_srv[TAC_PLUS_MAXSERVERS];
 int tac_srv_no = 0;
 
+char tac_config[64];
 char tac_service[64];
 char tac_protocol[64];
 char tac_prompt[64];
@@ -170,113 +171,211 @@ int tacacs_get_password (pam_handle_t * pamh, int flags
     return PAM_SUCCESS;
 }
 
+
+static int _pam_process_option(const char *argv)
+{
+    const char *current_secret = NULL;
+
+    if (!strncmp (argv, "service=", 8))
+    { /* author & acct */
+        xstrcpy (tac_service, argv + 8, sizeof(tac_service));
+    }
+    else if (!strncmp (argv, "protocol=", 9))
+    { /* author & acct */
+        xstrcpy (tac_protocol, argv + 9, sizeof(tac_protocol));
+    }
+    else if (!strncmp (argv, "prompt=", 7))
+    { /* authentication */
+        xstrcpy (tac_prompt, argv + 7, sizeof(tac_prompt));
+        /* Replace _ with space */
+        int chr;
+        for (chr = 0; chr < strlen(tac_prompt); chr++)
+        {
+            if (tac_prompt[chr] == '_')
+            {
+                tac_prompt[chr] = ' ';
+            }
+        }
+    }
+    else if (!strncmp (argv, "login=", 6))
+    {
+        xstrcpy (tac_login, argv + 6, sizeof(tac_login));
+    }
+    else if (!strncmp (argv, "server=", 7))
+    { /* authen & acct */
+        if(tac_srv_no < TAC_PLUS_MAXSERVERS)
+        { 
+            struct addrinfo hints, *servers, *server;
+            int rv;
+            char *close_bracket, *server_name, *port, server_buf[256];
+            
+            memset(&hints, 0, sizeof hints);
+            hints.ai_family = AF_UNSPEC;  /* use IPv4 or IPv6, whichever */
+            hints.ai_socktype = SOCK_STREAM;
+            
+            if (strlen(argv + 7) >= sizeof(server_buf))
+            {
+                _pam_log(LOG_ERR, "server address too long, sorry");
+                return 1;
+            }
+            strcpy(server_buf, argv + 7);
+
+            if (*server_buf == '[' && (close_bracket = strchr(server_buf, ']')) != NULL)
+            { /* Check for URI syntax */
+                server_name = server_buf + 1;
+                port = strchr(close_bracket, ':');
+                *close_bracket = '\0';
+            }
+            else
+            { /* Fall back to traditional syntax */
+                server_name = server_buf;
+                port = strchr(server_buf, ':');
+            }
+            if (port != NULL)
+            {
+                *port = '\0';
+                port++;
+            }
+            if ((rv = getaddrinfo(server_name, (port == NULL) ? "49" : port, &hints, &servers)) == 0)
+            {
+                for(server = servers; server != NULL && tac_srv_no < TAC_PLUS_MAXSERVERS; server = server->ai_next)
+                {
+                    tac_srv[tac_srv_no].addr = server;
+                    tac_srv[tac_srv_no].key = current_secret;
+                    tac_srv_no++;
+                }
+            }
+            else
+            {
+                _pam_log (LOG_ERR,
+                          "skip invalid server: %s (getaddrinfo: %s)",
+                          server_name, gai_strerror(rv));
+            }
+        }
+        else
+        {
+            _pam_log(LOG_ERR, "maximum number of servers (%d) exceeded, skipping",
+                     TAC_PLUS_MAXSERVERS);
+        }
+    }
+    else if (!strncmp (argv, "secret=", 7))
+    {
+        int i;
+        // MWM: FIXME: this is now not const
+        current_secret = argv + 7;     /* points right into argv (which is const) */
+
+        /* if 'secret=' was given after a 'server=' parameter, fill in the current secret */
+        for(i = tac_srv_no-1; i >= 0; i--)
+        {
+            if (tac_srv[i].key != NULL)
+                break;
+
+            tac_srv[i].key = current_secret;
+        }
+    }
+    else if (!strncmp (argv, "timeout=", 8))
+    {
+        /* FIXME atoi() doesn't handle invalid numeric strings well */
+        tac_timeout = atoi(argv + 8);
+
+        if (tac_timeout < 0)
+        {
+            tac_timeout = 0;
+        }
+        else
+        { 
+            tac_readtimeout_enable = 1;
+        }
+    }
+    else
+    {
+        _pam_log (LOG_WARNING, "unrecognized option: %s", argv);
+    }
+    return 0;
+}
+
 int _pam_parse (int argc, const char **argv) {
     int ctrl = 0;
     const char *current_secret = NULL;
+
+    tac_config[0] = 0;
+
+    for (ctrl = 0; argc-- > 0; ++argv)
+    {
+        if (!strcmp (*argv, "debug"))
+        { /* all */
+            ctrl |= PAM_TAC_DEBUG;
+        }
+        else if (!strcmp (*argv, "use_first_pass"))
+        {
+            ctrl |= PAM_TAC_USE_FIRST_PASS;
+        }
+        else if (!strcmp (*argv, "try_first_pass"))
+        { 
+            ctrl |= PAM_TAC_TRY_FIRST_PASS;
+        }
+        else if (!strcmp (*argv, "acct_all"))
+        {
+            ctrl |= PAM_TAC_ACCT;
+        }
+        else if (!strncmp (*argv, "config=", 7))
+        {
+            xstrcpy (tac_config, *argv + 7, sizeof(tac_config));
+        }
+        else
+        {
+            _pam_log (LOG_WARNING, "unrecognized option: %s", *argv);
+        }
+    }
+
+
+    return ctrl;
+}    /* _pam_parse */
+
+int _read_config (int ctrl)
+{
+    char*  configFile = NULL;
+    FILE*  fp;
+    char*  line;
+    size_t lineLen;
+    
+    if (tac_config[0] == 0)
+        configFile = PAM_TACACS_CONF_FILE;
+    else
+        configFile = &tac_config[0];
+
+    // open file
+    fp = fopen (configFile, "r");
+
+    if (fp == NULL)
+    {
+        syslog (LOG_ALERT, "pam_tacacs: missing file \"%s\"", configFile);
+        return PAM_SERVICE_ERR;
+    }
 
     /* otherwise the list will grow with each call */
     memset(tac_srv, 0, sizeof(tacplus_server_t) * TAC_PLUS_MAXSERVERS);
     tac_srv_no = 0;
 
+    tac_config[0] = 0;
     tac_service[0] = 0;
     tac_protocol[0] = 0;
     tac_prompt[0] = 0;
     tac_login[0] = 0;
 
-    for (ctrl = 0; argc-- > 0; ++argv) {
-        if (!strcmp (*argv, "debug")) { /* all */
-            ctrl |= PAM_TAC_DEBUG;
-        } else if (!strcmp (*argv, "use_first_pass")) {
-            ctrl |= PAM_TAC_USE_FIRST_PASS;
-        } else if (!strcmp (*argv, "try_first_pass")) { 
-            ctrl |= PAM_TAC_TRY_FIRST_PASS;
-        } else if (!strncmp (*argv, "service=", 8)) { /* author & acct */
-            xstrcpy (tac_service, *argv + 8, sizeof(tac_service));
-        } else if (!strncmp (*argv, "protocol=", 9)) { /* author & acct */
-            xstrcpy (tac_protocol, *argv + 9, sizeof(tac_protocol));
-        } else if (!strncmp (*argv, "prompt=", 7)) { /* authentication */
-            xstrcpy (tac_prompt, *argv + 7, sizeof(tac_prompt));
-            /* Replace _ with space */
-            int chr;
-            for (chr = 0; chr < strlen(tac_prompt); chr++) {
-                if (tac_prompt[chr] == '_') {
-                    tac_prompt[chr] = ' ';
-                }
-            }
-        } else if (!strncmp (*argv, "login=", 6)) {
-            xstrcpy (tac_login, *argv + 6, sizeof(tac_login));
-        } else if (!strcmp (*argv, "acct_all")) {
-            ctrl |= PAM_TAC_ACCT;
-        } else if (!strncmp (*argv, "server=", 7)) { /* authen & acct */
-            if(tac_srv_no < TAC_PLUS_MAXSERVERS) { 
-                struct addrinfo hints, *servers, *server;
-                int rv;
-                char *close_bracket, *server_name, *port, server_buf[256];
-
-                memset(&hints, 0, sizeof hints);
-                hints.ai_family = AF_UNSPEC;  /* use IPv4 or IPv6, whichever */
-                hints.ai_socktype = SOCK_STREAM;
-
-                if (strlen(*argv + 7) >= sizeof(server_buf)) {
-                    _pam_log(LOG_ERR, "server address too long, sorry");
-                    continue;
-                }
-                strcpy(server_buf, *argv + 7);
-
-                if (*server_buf == '[' && (close_bracket = strchr(server_buf, ']')) != NULL) { /* Check for URI syntax */
-                    server_name = server_buf + 1;
-                    port = strchr(close_bracket, ':');
-                    *close_bracket = '\0';
-                } else { /* Fall back to traditional syntax */
-                    server_name = server_buf;
-                    port = strchr(server_buf, ':');
-                }
-                if (port != NULL) {
-                    *port = '\0';
-                    port++;
-                }
-                if ((rv = getaddrinfo(server_name, (port == NULL) ? "49" : port, &hints, &servers)) == 0) {
-                    for(server = servers; server != NULL && tac_srv_no < TAC_PLUS_MAXSERVERS; server = server->ai_next) {
-                        tac_srv[tac_srv_no].addr = server;
-                        tac_srv[tac_srv_no].key = current_secret;
-                        tac_srv_no++;
-                    }
-                } else {
-                    _pam_log (LOG_ERR,
-                        "skip invalid server: %s (getaddrinfo: %s)",
-                        server_name, gai_strerror(rv));
-                }
-            } else {
-                _pam_log(LOG_ERR, "maximum number of servers (%d) exceeded, skipping",
-                    TAC_PLUS_MAXSERVERS);
-            }
-        } else if (!strncmp (*argv, "secret=", 7)) {
-            int i;
-
-            current_secret = *argv + 7;     /* points right into argv (which is const) */
-
-            /* if 'secret=' was given after a 'server=' parameter, fill in the current secret */
-            for(i = tac_srv_no-1; i >= 0; i--) {
-                if (tac_srv[i].key != NULL)
-                    break;
-
-                tac_srv[i].key = current_secret;
-            }
-        } else if (!strncmp (*argv, "timeout=", 8)) {
-            /* FIXME atoi() doesn't handle invalid numeric strings well */
-            tac_timeout = atoi(*argv + 8);
-
-            if (tac_timeout < 0) {
-                tac_timeout = 0;
-            } else { 
-                tac_readtimeout_enable = 1;
-            }
-        } else {
-            _pam_log (LOG_WARNING, "unrecognized option: %s", *argv);
-        }
+    // for each line in file process
+    while (getline(&line, &lineLen, fp) >= 0)
+    {
+        _pam_process_option(line);
+        free(line);
+        line = NULL;
     }
 
-    if (ctrl & PAM_TAC_DEBUG) {
+    // close file
+    fclose(fp);
+
+    if (ctrl & PAM_TAC_DEBUG)
+    {
         int n;
 
         _pam_log(LOG_DEBUG, "%d servers defined", tac_srv_no);
@@ -290,7 +389,5 @@ int _pam_parse (int argc, const char **argv) {
         _pam_log(LOG_DEBUG, "tac_prompt='%s'", tac_prompt);
         _pam_log(LOG_DEBUG, "tac_login='%s'", tac_login);
     }
-
-    return ctrl;
-}    /* _pam_parse */
-
+   
+}

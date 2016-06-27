@@ -233,6 +233,9 @@ int pam_sm_authenticate (pam_handle_t * pamh, int flags,
     if ((user = _pam_get_user(pamh)) == NULL)
         return PAM_USER_UNKNOWN;
 
+    // read config file
+    _read_config(ctrl);
+    
     if (ctrl & PAM_TAC_DEBUG)
         syslog(LOG_DEBUG, "%s: user [%s] obtained", __FUNCTION__, user);
 
