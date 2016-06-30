@@ -119,7 +119,7 @@ extern int tac_ver_patch;
 /* header.c */
 extern int session_id;
 extern int tac_encryption;
-extern const char *tac_secret;
+extern char *tac_secret;
 extern char tac_login[64];
 extern int tac_priv_lvl;
 extern int tac_authen_method;
@@ -151,7 +151,9 @@ int tac_acct_send(int, int, const char *, char *, char *,
 int tac_acct_read(int, struct areply *);
 void *xcalloc(size_t, size_t);
 void *xrealloc(void *, size_t);
+char *xstrdup(const char *s);
 char *xstrcpy(char *, const char *, size_t);
+void xfree(void* ptr);
 char *_tac_check_header(HDR *, int);
 int tac_author_send(int, const char *, char *, char *,
     struct tac_attrib *);

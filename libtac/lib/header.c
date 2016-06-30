@@ -41,9 +41,9 @@ int session_id;
 /* Encryption flag. */
 int tac_encryption = 0;
 
-/* Pointer to TACACS+ shared secret string. */
-/* note: tac_secret will point to tacplus_server[i].key */
-const char *tac_secret = NULL;
+/* Pointer to copy of TACACS+ shared secret string. */
+/* note: this is an allocated buffer*/
+char *tac_secret = NULL;
 
 /* TACACS+ shared login string. */
 char tac_login[64]; /* default is PAP */

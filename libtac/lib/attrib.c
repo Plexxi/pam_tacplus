@@ -46,11 +46,11 @@ void tac_add_attrib_pair(struct tac_attrib **attr, char *name, char sep, char *v
             __FUNCTION__, name))
         return;
     }
-    
     /* initialize the list if application passed us a null pointer */
     if(*attr == NULL) {
         *attr = (struct tac_attrib *) xcalloc(1, sizeof(struct tac_attrib));
-        a = *attr;
+       a = *attr;
+
     } else {
         /* find the last allocated block */
         a = *attr;

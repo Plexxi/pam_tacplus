@@ -27,12 +27,14 @@
 #include "support.h"
 #include "pam_tacplus.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 tacplus_server_t tac_srv[TAC_PLUS_MAXSERVERS];
 int tac_srv_no = 0;
 
+char* current_secret = NULL;
 char tac_config[64];
 char tac_service[64];
 char tac_protocol[64];
@@ -148,7 +150,7 @@ int tacacs_get_password (pam_handle_t * pamh, int flags
              pass = resp->resp;    /* remember this! */
              resp->resp = NULL;
 
-             free(resp);
+             xfree(resp);
              resp = NULL;
          } else {
              if (ctrl & PAM_TAC_DEBUG) {
@@ -174,7 +176,6 @@ int tacacs_get_password (pam_handle_t * pamh, int flags
 
 static int _pam_process_option(const char *argv)
 {
-    const char *current_secret = NULL;
 
     if (!strncmp (argv, "service=", 8))
     { /* author & acct */
@@ -240,8 +241,18 @@ static int _pam_process_option(const char *argv)
             {
                 for(server = servers; server != NULL && tac_srv_no < TAC_PLUS_MAXSERVERS; server = server->ai_next)
                 {
-                    tac_srv[tac_srv_no].addr = server;
-                    tac_srv[tac_srv_no].key = current_secret;
+                    if (tac_srv[tac_srv_no].addr != NULL)
+                    {
+                        xfree(tac_srv[tac_srv_no].addr);
+                    }
+                    tac_srv[tac_srv_no].addr = xcalloc(1,sizeof(struct addrinfo));
+                    bcopy(server, tac_srv[tac_srv_no].addr, sizeof(struct addrinfo));
+                    
+                    if (tac_srv[tac_srv_no].key != NULL)
+                    {
+                        xfree(tac_srv[tac_srv_no].key);
+                    }
+                    tac_srv[tac_srv_no].key = xstrdup(current_secret);
                     tac_srv_no++;
                 }
             }
@@ -261,8 +272,12 @@ static int _pam_process_option(const char *argv)
     else if (!strncmp (argv, "secret=", 7))
     {
         int i;
-        // MWM: FIXME: this is now not const
-        current_secret = argv + 7;     /* points right into argv (which is const) */
+    
+        if (current_secret != NULL)
+        {
+            xfree(current_secret);
+        }
+        current_secret = xstrdup (argv + 7);
 
         /* if 'secret=' was given after a 'server=' parameter, fill in the current secret */
         for(i = tac_srv_no-1; i >= 0; i--)
@@ -270,7 +285,7 @@ static int _pam_process_option(const char *argv)
             if (tac_srv[i].key != NULL)
                 break;
 
-            tac_srv[i].key = current_secret;
+            tac_srv[i].key = xstrdup(current_secret);
         }
     }
     else if (!strncmp (argv, "timeout=", 8))
@@ -296,7 +311,6 @@ static int _pam_process_option(const char *argv)
 
 int _pam_parse (int argc, const char **argv) {
     int ctrl = 0;
-    const char *current_secret = NULL;
 
     tac_config[0] = 0;
 
@@ -336,8 +350,10 @@ int _read_config (int ctrl)
 {
     char*  configFile = NULL;
     FILE*  fp;
-    char*  line;
+    char*  line = NULL;
+    size_t lineBufLen;
     size_t lineLen;
+    int    i;
     
     if (tac_config[0] == 0)
         configFile = PAM_TACACS_CONF_FILE;
@@ -354,21 +370,40 @@ int _read_config (int ctrl)
     }
 
     /* otherwise the list will grow with each call */
+    for (i = 0; i < tac_srv_no; i++)
+    {
+        if (tac_srv[i].addr != NULL)
+        {
+            xfree(tac_srv[i].addr);
+        }
+        if (tac_srv[i].key != NULL)
+        {
+            xfree(tac_srv[i].key);
+        }
+    }
     memset(tac_srv, 0, sizeof(tacplus_server_t) * TAC_PLUS_MAXSERVERS);
     tac_srv_no = 0;
 
-    tac_config[0] = 0;
+    if (current_secret != NULL)
+    {
+        xfree(current_secret);
+    }
+    current_secret = NULL;
+    syslog (LOG_DEBUG, "clearing vars2");
     tac_service[0] = 0;
     tac_protocol[0] = 0;
     tac_prompt[0] = 0;
     tac_login[0] = 0;
 
     // for each line in file process
-    while (getline(&line, &lineLen, fp) >= 0)
+    while ((lineLen = getline(&line, &lineBufLen, fp)) != -1)
     {
+        line[lineLen-1] = 0; 
         _pam_process_option(line);
-        free(line);
-        line = NULL;
+    }
+    if (line != NULL)
+    {
+        xfree(line);
     }
 
     // close file

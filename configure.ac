@@ -38,6 +38,7 @@ AC_CHECK_LIB(tac, tac_connect)
 AC_CHECK_LIB(crypto, MD5_Init)
 AC_CHECK_LIB(crypto, RAND_pseudo_bytes)
 AC_CHECK_LIB(util, logwtmp)
+AC_CHECK_LIB(pthread, pthread_once)
 
 case "$host" in
 	sparc-* | sparc64-*)

@@ -23,7 +23,7 @@
 #endif
 
 /* if OpenSSL library is available this legacy code will not be compiled in */
-#if !defined(HAVE_OPENSSL_RAND_H) && !defined(HAVE_LIBCRYPTO)
+//#if !defined(HAVE_OPENSSL_RAND_H) && !defined(HAVE_LIBCRYPTO)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,4 +84,4 @@ magic()
     return (u_int32_t)random();
 }
 
-#endif
+//#endif

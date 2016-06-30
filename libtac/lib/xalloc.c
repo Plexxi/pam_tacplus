@@ -44,7 +44,6 @@ void *xrealloc(void *ptr, size_t size) {
 char *xstrdup(const char *s) {
     char *p;
     if (s == NULL) return NULL;
-
     if ( (p = strdup(s)) == NULL ) {
         TACSYSLOG((LOG_ERR, "%s: strdup(%s) failed: %m", __FUNCTION__, s))
         exit(1);
@@ -76,3 +75,8 @@ char *xstrcpy(char *dst, const char *src, size_t dst_size) {
     return strcpy(dst, src);
 }
 
+void xfree(void* ptr)
+{
+
+    free(ptr);
+}

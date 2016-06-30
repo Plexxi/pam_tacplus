@@ -96,14 +96,14 @@ int _pam_send_account(int tac_fd, int type, const char *user, char *tty,
             task_id);
 
         if(re.msg != NULL)
-            free(re.msg);
+            xfree(re.msg);
 
         close(tac_fd);
         return -1;
     }
 
     if(re.msg != NULL)
-        free(re.msg);
+        xfree(re.msg);
 
     close(tac_fd);
     return 0;
@@ -135,6 +135,9 @@ int _pam_account(pam_handle_t *pamh, int argc, const char **argv,
 
     if (ctrl & PAM_TAC_DEBUG)
         syslog(LOG_DEBUG, "%s: username [%s] obtained", __FUNCTION__, user);
+
+    // read config file
+    _read_config(ctrl);
 
     tty = _pam_get_terminal(pamh);
     if(!strncmp(tty, "/dev/", 5))
@@ -233,23 +236,23 @@ int pam_sm_authenticate (pam_handle_t * pamh, int flags,
     if ((user = _pam_get_user(pamh)) == NULL)
         return PAM_USER_UNKNOWN;
 
-    // read config file
-    _read_config(ctrl);
-    
     if (ctrl & PAM_TAC_DEBUG)
         syslog(LOG_DEBUG, "%s: user [%s] obtained", __FUNCTION__, user);
 
+    // read config file
+    _read_config(ctrl);
+    
     retval = tacacs_get_password (pamh, flags, ctrl, &pass);
     if (retval != PAM_SUCCESS || pass == NULL || *pass == '\0') {
         _pam_log(LOG_ERR, "unable to obtain password");
-        free(pass);
+        xfree(pass);
         return PAM_CRED_INSUFFICIENT;
     }
 
     retval = pam_set_item (pamh, PAM_AUTHTOK, pass);
     if (retval != PAM_SUCCESS) {
         _pam_log(LOG_ERR, "unable to set password");
-        free(pass);
+        xfree(pass);
         return PAM_CRED_INSUFFICIENT;
     }
 
@@ -317,8 +320,17 @@ int pam_sm_authenticate (pam_handle_t * pamh, int flags,
                     }
                     status = PAM_SUCCESS;
                     communicating = 0;
-                    active_server.addr = tac_srv[srv_i].addr;
-                    active_server.key = tac_srv[srv_i].key;
+                    if (active_server.addr != NULL)
+                    {
+                        xfree(active_server.addr);
+                    }
+                    active_server.addr = (struct addrinfo*)xcalloc(1, sizeof(struct addrinfo));
+                    bcopy(tac_srv[srv_i].addr, active_server.addr, sizeof(struct addrinfo));
+                    if (active_server.key != NULL)
+                    {
+                        xfree(active_server.key);
+                    }
+                    active_server.key = xstrdup(tac_srv[srv_i].key);
 
                     if (ctrl & PAM_TAC_DEBUG)
                         syslog(LOG_DEBUG, "%s: active srv %d", __FUNCTION__, srv_i);
@@ -458,12 +470,19 @@ int pam_sm_authenticate (pam_handle_t * pamh, int flags,
                         syslog(LOG_DEBUG, "tacacs status: unknown response 0x%02x", msg);
             }
 
-            if (NULL != resp) {
-                free(resp->resp);
-                free(resp);
+            if (NULL != resp)
+            {
+                if (resp->resp != NULL)
+                {
+                    xfree(resp->resp);
+                }
+                xfree(resp);
             }
                 
-            free(re.msg);
+            if (re.msg != NULL)
+            {
+                xfree(re.msg);
+            }
 
         }    /* end while(communicating) */
         close(tac_fd);
@@ -479,7 +498,7 @@ int pam_sm_authenticate (pam_handle_t * pamh, int flags,
 
     if (NULL != pass) {
         bzero(pass, strlen (pass));
-        free(pass);
+        xfree(pass);
         pass = NULL;
     }
 
@@ -538,6 +557,9 @@ int pam_sm_acct_mgmt (pam_handle_t * pamh, int flags,
     if (ctrl & PAM_TAC_DEBUG)
         syslog(LOG_DEBUG, "%s: username obtained [%s]", __FUNCTION__, user);
 
+    // read config file
+    _read_config(ctrl);
+
     tty = _pam_get_terminal(pamh);
     if(!strncmp(tty, "/dev/", 5))
         tty += 5;
@@ -572,13 +594,13 @@ int pam_sm_acct_mgmt (pam_handle_t * pamh, int flags,
 
     tac_add_attrib(&attr, "service", tac_service);
     if(tac_protocol[0] != '\0')
-      tac_add_attrib(&attr, "protocol", tac_protocol);
-
+        tac_add_attrib(&attr, "protocol", tac_protocol);
+    
     tac_fd = tac_connect_single(active_server.addr, active_server.key, NULL, tac_timeout);
     if(tac_fd < 0) {
         _pam_log (LOG_ERR, "TACACS+ server unavailable");
         if(arep.msg != NULL)
-            free (arep.msg);
+            xfree (arep.msg);
         return PAM_AUTH_ERR;
     }
 
@@ -589,7 +611,7 @@ int pam_sm_acct_mgmt (pam_handle_t * pamh, int flags,
     if(retval < 0) {
         _pam_log (LOG_ERR, "error getting authorization");
         if(arep.msg != NULL)
-            free (arep.msg);
+            xfree (arep.msg);
 
         close(tac_fd);
         return PAM_AUTH_ERR;
@@ -605,7 +627,7 @@ int pam_sm_acct_mgmt (pam_handle_t * pamh, int flags,
 
         _pam_log (LOG_ERR, "TACACS+ authorisation failed for [%s]", user);
         if(arep.msg != NULL)
-            free (arep.msg);
+            xfree (arep.msg);
 
         close(tac_fd);
         return PAM_PERM_DENIED;
@@ -656,7 +678,7 @@ int pam_sm_acct_mgmt (pam_handle_t * pamh, int flags,
         tac_free_attrib(&arep.attr);
 
     if(arep.msg != NULL)
-        free (arep.msg);
+        xfree (arep.msg);
 
     close(tac_fd);
 
@@ -716,6 +738,9 @@ int pam_sm_chauthtok(pam_handle_t * pamh, int flags,
 
     syslog(LOG_DEBUG, "%s(flags=%d, argc=%d)", __func__, flags, argc);
 
+    // read config file
+    _read_config(ctrl);
+
     if (   (pam_get_item(pamh, PAM_OLDAUTHTOK, &pam_pass) == PAM_SUCCESS)
         && (pam_pass != NULL) ) {
          if ((pass = strdup(pam_pass)) == NULL)
@@ -726,7 +751,7 @@ int pam_sm_chauthtok(pam_handle_t * pamh, int flags,
     
     if ((user = _pam_get_user(pamh)) == NULL) {
         if(pass) {
-                free(pass);
+                xfree(pass);
         }
         return PAM_USER_UNKNOWN;
     }
@@ -811,8 +836,17 @@ int pam_sm_chauthtok(pam_handle_t * pamh, int flags,
                     status = PAM_SUCCESS;
                     communicating = 0;
 
-                    active_server.addr = tac_srv[srv_i].addr;
-                    active_server.key = tac_srv[srv_i].key;
+                    if (active_server.addr != NULL)
+                    {
+                        xfree(active_server.addr);
+                    }
+                    active_server.addr = (struct addrinfo*)xcalloc(1, sizeof(struct addrinfo));
+                    bcopy(tac_srv[srv_i].addr, active_server.addr, sizeof(struct addrinfo));
+                    if (active_server.key != NULL)
+                    {
+                        xfree(active_server.key);
+                    }
+                    active_server.key = xstrdup(tac_srv[srv_i].key);
 
                     if (ctrl & PAM_TAC_DEBUG)
                         syslog(LOG_DEBUG, "%s: active srv %d", __FUNCTION__, srv_i);
@@ -950,11 +984,11 @@ int pam_sm_chauthtok(pam_handle_t * pamh, int flags,
             }
 
             if (NULL != resp) {
-                free(resp->resp);
-                free(resp);
+                xfree(resp->resp);
+                xfree(resp);
             }
 
-            free(re.msg);
+            xfree(re.msg);
 
         }    /* end while(communicating) */
         close(tac_fd);
@@ -972,7 +1006,7 @@ finish:
 
     if (NULL != pass) {
         bzero(pass, strlen(pass));
-        free(pass);
+        xfree(pass);
         pass = NULL;
     }
 

@@ -28,7 +28,7 @@
 
 typedef struct {
     struct addrinfo *addr;
-    const char *key;
+    char *key;
 } tacplus_server_t;
 
 extern tacplus_server_t tac_srv[TAC_PLUS_MAXSERVERS];
@@ -39,6 +39,7 @@ extern char tac_protocol[64];
 extern char tac_prompt[64];
 
 int _pam_parse (int, const char **);
+int _read_config (int ctrl);
 unsigned long _resolve_name (char *);
 unsigned long _getserveraddr (char *serv);
 int tacacs_get_password (pam_handle_t *, int, int, char **);

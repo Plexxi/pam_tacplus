@@ -173,7 +173,11 @@ int tac_connect_single(struct addrinfo *server, const char *key, struct addrinfo
     tac_encryption = 0;
     if (key != NULL && *key) {
         tac_encryption = 1;
-        tac_secret = key;
+        if (tac_secret != NULL)
+        {
+            free(tac_secret);
+        }
+        tac_secret = xstrdup(key);
     }
 
     TACDEBUG((LOG_DEBUG, "%s: exit status=%d (fd=%d)",\
