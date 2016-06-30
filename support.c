@@ -389,7 +389,7 @@ int _read_config (int ctrl)
         xfree(current_secret);
     }
     current_secret = NULL;
-    syslog (LOG_DEBUG, "clearing vars2");
+
     tac_service[0] = 0;
     tac_protocol[0] = 0;
     tac_prompt[0] = 0;
