@@ -3,7 +3,7 @@ Section: admin
 Priority: extra
 Maintainer: Jeroen Nijhof <jeroen@jeroennijhof.nl>
 Build-Depends: debhelper (>= 9), libpam-dev, dh-autoreconf, autoconf-archive
-Standards-Version: 3.9.5
+Standards-Version: 3.9.6
 Homepage: https://github.com/jeroennijhof/pam_tacplus
 
 Package: libpam-tacplus
@@ -19,13 +19,8 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: TACACS+ protocol library 
  This library implemenents the fundamentls of the TACACS+ protocol and supports
- authentication, authorization (account management) and accounting (session management).
-
-Package: libtac2-bin
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: TACACS+ client program
- Simple command-line client for TACACS+ testing and scripting
+ authentication, authorization (account management) and accounting
+ (session management).
 
 Package: libtac-dev
 Section: libdevel

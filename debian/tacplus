@@ -1,15 +1,15 @@
 Name: Tacacs+ authentication
 Default: no
-Priority: 257
+Priority: 128
 Auth-Type: Primary
 Auth:
-	sufficient			pam_tacplus.so
+	sufficient			pam_tacplus.so use_first_pass
 Account-Type: Primary
 Account:
 	sufficient			pam_tacplus.so
 Password-Type: Primary
 Password:
- 	sufficient			pam_tacplus.so
+ 	sufficient			pam_tacplus.so use_authtok try_first_pass
 Session-Type: Additional
 Session:
 	optional			pam_tacplus.so

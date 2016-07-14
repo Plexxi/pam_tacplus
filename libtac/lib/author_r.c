@@ -181,9 +181,6 @@ int tac_author_read(int fd, struct areply *re) {
         free(smsg);
     }
 
-    TACDEBUG((LOG_DEBUG, "%s: authorization reply status=%d",\
-        __FUNCTION__, tb->status));
-
     /* prepare status */
     switch(tb->status) {
         /* success conditions */
@@ -203,7 +200,6 @@ int tac_author_read(int fd, struct areply *re) {
                 pktp = (u_char *) tb + TAC_AUTHOR_REPLY_FIXED_FIELDS_SIZE;
                 argp = pktp + (tb->arg_cnt * sizeof(u_char)) + tb->msg_len +
                     tb->data_len;
-                TACSYSLOG((LOG_DEBUG, "Args cnt %d", tb->arg_cnt));
                 /* argp points to current argument string
                    pktp points to current argument length */
                 for(r=0; r < tb->arg_cnt; r++) {
@@ -232,7 +228,6 @@ int tac_author_read(int fd, struct areply *re) {
                     /* now buff points to attribute name,
                        value to the attribute value */
                 }
-                TACSYSLOG((LOG_DEBUG, "Adding buf/value pair (%s,%s)", buff, value));
                 tac_add_attrib_pair(&re->attr, buff, sepchar, value);
                 argp += *pktp;
                 pktp++; 

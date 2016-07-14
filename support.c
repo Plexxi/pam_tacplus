@@ -174,20 +174,60 @@ int tacacs_get_password (pam_handle_t * pamh, int flags
 }
 
 
-static int _pam_process_option(const char *argv)
+static int _pam_process_option(int ctrl, const char *line)
 {
+    char* _line = (char*)line;
+    char* temp;
+    char* key;
+    char* value;
+    
+    // strip leading whitespace
+    while (*_line == ' ')
+        _line++;
+    
+    // if line is empty or starts with #
+    if ((*_line == '#') || (*_line == 0))
+        return;
 
-    if (!strncmp (argv, "service=", 8))
-    { /* author & acct */
-        xstrcpy (tac_service, argv + 8, sizeof(tac_service));
+    key = _line;
+    if ((temp = strchr(_line, '=')) == NULL)
+        return;
+    else
+        *temp = 0;
+
+    value = temp + 1;
+
+    if (*value == '"')
+    {
+        value++;
+        if ((temp = strchr(value, '"')) == NULL)
+            return;
+        *temp = 0;
     }
-    else if (!strncmp (argv, "protocol=", 9))
-    { /* author & acct */
-        xstrcpy (tac_protocol, argv + 9, sizeof(tac_protocol));
+    else
+    {
+        if ((temp = strchr(value, '#')) != NULL)
+            *temp = 0;
+        if ((temp = strchr(value, ' ')) != NULL)
+            *temp = 0;
     }
-    else if (!strncmp (argv, "prompt=", 7))
+
+    if (ctrl & PAM_TAC_DEBUG)
+    {
+        _pam_log(LOG_DEBUG, "config key/val (%s) (%s)", key, value);
+    }
+
+    if (!strncmp (key, "service", 7))
+    { /* author & acct */
+        xstrcpy (tac_service, value, sizeof(tac_service));
+    }
+    else if (!strncmp (key, "protocol", 8))
+    { /* author & acct */
+        xstrcpy (tac_protocol, value, sizeof(tac_protocol));
+    }
+    else if (!strncmp (key, "prompt", 6))
     { /* authentication */
-        xstrcpy (tac_prompt, argv + 7, sizeof(tac_prompt));
+        xstrcpy (tac_prompt, value, sizeof(tac_prompt));
         /* Replace _ with space */
         int chr;
         for (chr = 0; chr < strlen(tac_prompt); chr++)
@@ -198,11 +238,11 @@ static int _pam_process_option(const char *argv)
             }
         }
     }
-    else if (!strncmp (argv, "login=", 6))
+    else if (!strncmp (key, "login", 5))
     {
-        xstrcpy (tac_login, argv + 6, sizeof(tac_login));
+        xstrcpy (tac_login, value, sizeof(tac_login));
     }
-    else if (!strncmp (argv, "server=", 7))
+    else if (!strncmp (key, "server", 6))
     { /* authen & acct */
         if(tac_srv_no < TAC_PLUS_MAXSERVERS)
         { 
@@ -214,12 +254,12 @@ static int _pam_process_option(const char *argv)
             hints.ai_family = AF_UNSPEC;  /* use IPv4 or IPv6, whichever */
             hints.ai_socktype = SOCK_STREAM;
             
-            if (strlen(argv + 7) >= sizeof(server_buf))
+            if (strlen(value) >= sizeof(server_buf))
             {
                 _pam_log(LOG_ERR, "server address too long, sorry");
                 return 1;
             }
-            strcpy(server_buf, argv + 7);
+            strcpy(server_buf, value);
 
             if (*server_buf == '[' && (close_bracket = strchr(server_buf, ']')) != NULL)
             { /* Check for URI syntax */
@@ -269,7 +309,7 @@ static int _pam_process_option(const char *argv)
                      TAC_PLUS_MAXSERVERS);
         }
     }
-    else if (!strncmp (argv, "secret=", 7))
+    else if (!strncmp (key, "secret", 6))
     {
         int i;
     
@@ -277,7 +317,7 @@ static int _pam_process_option(const char *argv)
         {
             xfree(current_secret);
         }
-        current_secret = xstrdup (argv + 7);
+        current_secret = xstrdup (value);
 
         /* if 'secret=' was given after a 'server=' parameter, fill in the current secret */
         for(i = tac_srv_no-1; i >= 0; i--)
@@ -288,10 +328,10 @@ static int _pam_process_option(const char *argv)
             tac_srv[i].key = xstrdup(current_secret);
         }
     }
-    else if (!strncmp (argv, "timeout=", 8))
+    else if (!strncmp (key, "timeout", 7))
     {
         /* FIXME atoi() doesn't handle invalid numeric strings well */
-        tac_timeout = atoi(argv + 8);
+        tac_timeout = atoi(value);
 
         if (tac_timeout < 0)
         {
@@ -304,7 +344,7 @@ static int _pam_process_option(const char *argv)
     }
     else
     {
-        _pam_log (LOG_WARNING, "unrecognized option: %s", argv);
+        _pam_log (LOG_WARNING, "unrecognized option: %s", key);
     }
     return 0;
 }
@@ -398,8 +438,8 @@ int _read_config (int ctrl)
     // for each line in file process
     while ((lineLen = getline(&line, &lineBufLen, fp)) != -1)
     {
-        line[lineLen-1] = 0; 
-        _pam_process_option(line);
+        line[lineLen-1] = 0;
+        _pam_process_option(ctrl, line);
     }
     if (line != NULL)
     {
